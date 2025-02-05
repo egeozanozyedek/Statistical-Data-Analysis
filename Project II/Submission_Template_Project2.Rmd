@@ -1,0 +1,486 @@
+---
+title: "G0O02a: Statistical Data Analysis: Project 2"
+author: "Ege Ozan Özyedek"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggplot2)
+library(GGally)
+library(gridExtra)
+library(cowplot)
+library(psych)
+library(car) 
+library(dplyr)  
+library(cluster) 
+library(factoextra)
+library(DAAG)
+library(pheatmap)
+library(corrplot)
+library(fossil)
+library(caret)
+
+```
+
+# Part 1: Clustering
+
+## Loading Data
+
+```{r}
+set.seed(0922060)  # replace with your student number
+rice_dataset <- read.csv("Rice_Dataset_5.csv")
+mysample <- sample(1:nrow(rice_dataset), 400)
+mydata <- data.frame(rice_dataset[mysample, c(1:4, 7, 11)])
+```
+
+```{r}
+c16 = c("dodgerblue2", "#E31A1C", "green4", "#6A3D9A", "#FF7F00", "black", "gold1", "skyblue2", "palegreen2", "#FDBF6F", "gray70", "maroon", "orchid1", "darkturquoise", "darkorange4", "brown")
+
+pri_color <- c16[1]
+sec_color <- c16[2]
+```
+
+## Question 1
+
+```{r}
+mydata.noclass <- subset(mydata, select=-c(CLASS))
+
+
+apply(mydata.noclass, 2, sd)
+
+apply(mydata.noclass, 2, max) - apply(mydata.noclass, 2, min)
+
+apply(mydata.noclass, 2, mean)
+```
+
+```{r}
+
+mydata.noclass.scaled <- as.data.frame(scale(mydata.noclass))
+mydata.scaled <- mydata.noclass.scaled 
+mydata.scaled$CLASS <- mydata$CLASS
+
+head(mydata)
+head(mydata.scaled)
+
+```
+
+### Discussion:
+
+While determining whether to standardize, we can check the standard deviation, mean and min-max ranges of each variable. These give a summarized idea of the scale of the data. The scale of each variable differs, as it can be observed with the aforementioned statistics. It's a good idea to standardize the data.
+
+## Question 2
+
+```{r , fig.height = 12, fig.width = 12}
+
+
+pairs(mydata.noclass.scaled, pch=19, col=c16[mydata$CLASS], main="Scatter Plot Matrix")
+# ggpairs(mydata.noclass.scaled, aes(color = as.factor(mydata$CLASS)))
+
+
+```
+
+### Discussion:
+
+Class Info –\> 1:blue , 2:red , 3:green , 4:purple 5:orange
+
+-   There exists some notable correlations between some pairs, for example: Area with all other except Solidity, and Perimeter and Major Axis
+-   Solidity does not showcase any linear relation with any other variables.
+-   In terms of clusters, in most scatter plots, classes are distinctly clustered. All variables except Solidity showcase this distinct separation to some extent. Solidity also might contribute valuable information on some classes, such as the one colored green in the scatter plots above. Because of these distinctions and clear separation in the above plots, and also the information contained within the variables, clustering algorithms such as k-means or K-medoids should be able to identify classes with good accuracy.
+-   Also important for the coming discussion is the distinction of each class. The most isolated class seems to be the one colored greed (3:Ipsala), while blue and orange are, in some scatter plots, in a similar cluster (1:Arborio and 5:Karacadag), similarly red and purple also showcase this in several occurrences (2:Basmati, 4:Jasmine).
+
+## Question 3
+
+```{r}
+
+mydata.noclass.scaled.ordered <- mydata.noclass.scaled[order(mydata.scaled$CLASS),]
+mydata.noclass.scaled.ordered
+
+mydata.scaled.ordered <- mydata.scaled[order(mydata.scaled$CLASS),]
+mydata.scaled.ordered
+
+
+X.diss <- daisy(mydata.noclass.scaled.ordered) # Euclidean distance
+corrplot::corrplot(as.matrix(X.diss), is.corr = FALSE, method = "color",
+                   col = corrplot::COL1("Blues"), tl.pos = "n")
+
+
+# X.diss.manh <- daisy(mydata.noclass.scaled.ordered, metric = "manhattan")
+# corrplot::corrplot(as.matrix(X.diss.manh), is.corr = FALSE, method = "color", col = corrplot::COL1("Blues"), tl.pos = "n")
+```
+
+### Discussion:
+
+First, lets note the important findings from the previous section.
+
+-   All classes are somewhat distinct.
+
+-   Class 3 (colored green) is the most distinctly separated class.
+
+-   Classes 1 and 5 are, in some scatter plots, overlap.
+
+-   Classes 2 and 4 are, in some scatter plots, overlap.
+
+Now we can observe the visualized dissimilarity matrix, which was calculated with data ordered w.r.t. the classes (starts with class 1, ends with 5).
+
+-   The visualization is made up of blocks. This is a good indication that there is evident high dissimilarity between certain classes, and the dissimilarity is very low on the diagonal (where the distance is calculated using observations of the same class).
+
+-   Class 3, as observed in the scatter plots as well, is the most distinct class. While some classes struggle to differentiate between each other (meaning dissimilarity between observation of two classes is low, i.e. Classes 1 and 4&5 as it can be seen in the first column), the dissimilarity between observations of class 3 and others are high. This is seen by the bolder color on the 3rd column, if we were to separate the matrix by 5.
+
+-   Class 1 and 5 have low dissimilarity. This was also observed in the scatter plots. There is also low dissimilarity between classes 1 and 4. This is also evident in the scatter plots as well, these two classes overlap on the Solidity x {Major Axis, Perimeter} plots.
+
+-   Class 2 and 4 also have low dissimilarity, as expected from our discussion on the scatter plots. Class 2 is dissimilar to all other classes except 4; however, it seems that class 4 has low dissimilarity to all other classes except class 3.
+
+With these we can expect class 3 to be easily identifiable. The tricky classes to identify will be 4, which has low dissimilarity with most other classes. Classes 1,2,5 might also be tricky because in some cases they overlap (i.e. have low dissimilarity, they overlap in the 2D scatter plots, and would overlap in a high dimensional scatter plots, or in their 2D PCA representations) with certain other classes.
+
+## Question 4
+
+```{r}
+
+mydata.pam <- pam(mydata.noclass.scaled, k=5)
+
+fviz_cluster(mydata.pam, mydata.noclass.scaled, geom="point", ellipse.type="norm", palette=c16)
+```
+
+```{r}
+mapping <- c("1" = "Arborio", "2" = "Basmati", "3" = "Ipsala", "4" = "Jasmine", "5" = "Karacadag")
+
+named.classes <- mapping[as.character(mydata.scaled$CLASS)]
+
+ttt <- table(named.classes, mydata.pam$cluster)
+
+corrplot(ttt, is.corr=F, method="color",
+         tl.srt=0, tl.col="black", addgrid.col="grey", addCoef.col="grey",
+         number.cex=2, cl.pos="n")
+```
+
+```{r}
+fossil::rand.index(mydata.scaled$CLASS, mydata.pam$cluster) 
+```
+
+### Discussion:
+
+Above, the clustering and the confusion matrix which showcases which points in the actual classes correspond to which clusters identified by K-medoids. The cluster numbers produced by K-medoids are not the same identifiers which identify the classes, for this reason the confusion matrix shows the actual names of the rice instead of the numbering.
+
+-   It can be observed that, cluster 1 matches well with class 3 (Ipsala) from the confusion matrix. When the cluster plot is observed, it can be see that cluster 1 is distinct from all other clusters and do not overlap with them. This was also the predicted result from the previous analysis (with the scatter plots and dissimilarity matrix).
+
+-   Cluster 3 and Cluster 5, which matches with class 1 and class 5 respectively, overlap on the cluster plot. This is again in line with our expectations, as these classes were overlapping in some scatter plots and were less dissimilar compared to other combination of class in the dissimilarity matrix.
+
+-   Cluster 2 matches with most samples from class 2 (Basmati), while cluster 4 matches with class 4 (Jasmine). Previously it could be observed that class 2 and class 4 were similar/overlapping. This is also visible in the cluster plot.
+
+-   Class 4 is the class that is in the least amount of agreement with the actual classes, again this was expected from the previous observations.
+
+To get an overall picture of the agreement actual classes and the K-medoids clusters showcase, we can use the Rand index, which is 0.91 in this case. This shows that K-medoids with k=5 is mostly in agreement with the actual classes of the observations.
+
+## Question 5
+
+```{r}
+
+fviz_nbclust(mydata.noclass.scaled, pam)
+
+for (i in 3:5){
+  X.pam <- pam(mydata.noclass.scaled, k = i) 
+
+
+  plot(cluster::silhouette(X.pam), border = NA, 
+       main = paste('Silhouette plot for pam', i), col = c16[1:i])
+
+}
+
+```
+
+```{r}
+
+mydata.pam3 <- pam(mydata.noclass.scaled, k=3)
+fviz_cluster(mydata.pam3, mydata.noclass.scaled, geom="point", ellipse.type="norm", palette=c16)
+
+fossil::rand.index(mydata.scaled$CLASS, mydata.pam3$cluster) 
+
+ttt <- table(named.classes, mydata.pam3$cluster)
+
+corrplot(ttt, is.corr=F, method="color",
+         tl.srt=0, tl.col="black", addgrid.col="grey", addCoef.col="grey",
+         number.cex=2, cl.pos="n")
+```
+
+### Discussion:
+
+To obtain an idea as to what k could give the best clustering, we can first get an overview of silhouette values using `fviz_nbclust`. The k with the highest average silhouette values are k=3,4,5. We can observe the silhouette values for each cluster for these k. By looking at both, k=3 seems to be the choice that best separates the data, it has the highest overall silhouette width (0.48, weak structure).
+
+To compare the classes at hand, and the clustering using K-mediods with k=3, we again look at the cluster plot, confusion matrix and the Rand index.
+
+-   The Rand index is 0.79, which is lower than that of k=5. This indicates that the 3 clusters do a good job of dividing the classes accurately.
+
+-   If we look at the confusion matrix, and also the cluster plot, we again see that the Ipsala class is nicely seperated from all other clusters.
+
+-   The second cluster contains the Basmati and Jasmine classes (2nd and 4th classes), which were observed to have similar observations. It was also mentioned that class 2, Basmati, was notably dissimilar to all other classes except 4, this can also be observed as all its observations lay in the 2nd cluster.
+
+-   The 3rd cluster contains observations from Arborio, Jasmine and Karacadag. These were the classes which had less dissimilarity between each other, hence it is reasonable that they would be clustered in the same cluster.
+
+## Question 6
+
+```{r Q2 - Scatterplot Matrix, fig.height = 6, fig.width = 6}
+# Your code here
+
+
+pheatmap::pheatmap(mydata.noclass.scaled[order(mydata.pam3$cluster), ], 
+                   gaps_row = cumsum(mydata.pam3$clusinfo[, "size"]),
+                   legend = TRUE, show_rownames = FALSE, 
+                   color = corrplot::COL2("BrBG"), cluster_rows=F, cluster_cols=F,)
+```
+
+### Discussion:
+
+The heatmap consisting of observations ordered w.r.t. their clusters (k=3) can be observed. Each line colors the value of that observation for the variable. The statements made below generally focus on which variables contribute to the cluster determination and the general consistency/homogeneity in the cluster
+
+-   It's apparent that there exists 3 distinct sections (when considering rows) in the heatmap. We can loosely assume that these correspond to class 3, class 2&4, and class 1&4&5. The consistency of values for each variable in these 3 distinct sections is also visible.
+
+-   The first section/row includes high values for all variables. Especially for the AREA variable, the values are extreme. This may be a characteristic of the 3rd class (Ipsala).
+
+-   The second section includes high values for PERIMETER and MAJOR AXIS, while other variables are on the lower end in terms of value.
+
+-   Similarly, the third section includes high values for SOLIDITY and MINOR AXIS, while the rest of the variables are generally low valued.
+
+# Part 2: Regression
+
+## Loading Data
+
+```{r}
+cars_data <- read.table("cars_data.txt", sep = "", header = T)
+cars_data$euro_standard <- as.factor(cars_data$euro_standard)
+cars_data$transmission_type <- as.factor(cars_data$transmission_type)
+cars_data$fuel_type <- as.factor(cars_data$fuel_type)
+set.seed(0922060) # replace with your student number
+data_ind <- sample.int(n = nrow(cars_data), size = 500, replace = F)
+mydata <- cars_data[data_ind, -c(1,2,3)]
+```
+
+## Question 1
+
+```{r}
+mydata.lm.full <- lm(co2 ~ ., data = mydata) 
+M1 <- mydata.lm.full
+
+summary(M1)
+```
+
+```{r}
+mc_diag <- function(model) {
+  model.mm <- model.matrix(model)[, -1]
+  lambda <- eigen(cor(model.mm))$values
+  cond_num <- sqrt(lambda[1]/lambda)
+  vifs <- DAAG::vif(model)
+  print(tail(cond_num, n=1))
+  print(vifs)
+  print(mean(vifs))
+}
+
+mc_diag(M1)
+```
+
+### Discussion:
+
+To check if the model suffers from multicollinearity, we can look at the condition number, and VIF of the predictor variables. The desired range for these values is for them to be less than 10.
+
+Above it can be seen that the condition number is way above 10, and several variables have very high VIF, meaning they have a high linear association/collinearity with other variables. As the variable increases in linear dependency (if its explainable using the rest of the other variables), its R\^2 increases, and hence VIF also increases. "combined_metric" is actually a good example for this issue, since it is a weighted combination of urban_metric and extra_urban_metric. These three variables therefore have high VIF.
+
+## Question 2
+
+```{r}
+mydata.lm.init <- lm(co2 ~ 1, data = mydata) 
+summary(mydata.lm.init)
+```
+
+```{r}
+mydata.lm.step <- MASS::stepAIC(mydata.lm.init, list(upper = mydata.lm.full, 
+                                            lower = mydata.lm.init), direction = "both")
+M2 <- mydata.lm.step
+summary(M2)
+```
+
+```{r}
+mc_diag(M2)
+anova(M2, M1)
+```
+
+### Discussion:
+
+M2 also suffers from multicollinearity, since combined/urban/extra_urban metrics still exist as predictor variables in the model. These variables again have high VIF, and the condition number is also above 10.
+
+## Question 3
+
+```{r}
+
+M3 <- update(M2,  ~ . -urban_metric -extra_urban_metric  , data = mydata)
+summary(M3)
+```
+
+```{r}
+mc_diag(M3)
+
+anova(M3, M2) 
+
+summary(M3)$r.squared
+summary(M2)$r.squared
+
+summary(M3)$adj.r.squared
+summary(M2)$adj.r.squared
+```
+
+### Discussion:
+
+Whether or not it is appropriate in this case would depend on if there is a significant performance drop-off between M2 and a possible M3. Since combined_metric is a combination of the two variables urban/extra_urban_metric, it is logical to drop these two and keep the combination. Logically, the inverse could also be done (drop the combination, keep the other two), although in that case the VIF of the remaining two variables are still high. Hence, the former is preferable.
+
+After removing urban & extra_urban_metric, we can compare the two models using the ANOVA test and also by checking the R\^2 and (R_adj)\^2 values. - ANOVA test concludes that there is a statistically significant improvement when the omitted variables are included. - Although R\^2 and (R_adj)\^2 do decrease, it is by a very small margin.
+
+I believe while the R\^2 values are this high, it is non-problematic to remove the said variables and obtain M3, since preventing problems caused by multicollinearity might be more important, e.g. poor performance on new data.
+
+## Question 4
+
+```{r}
+# Similar to the exercise session 7
+
+M3.res <- MASS::stdres(M3)
+cutoff <- qnorm(0.995)
+
+plot(M3.res, pch = 19, ylab = "Standardized Residual")
+abline(h = 0, col = "grey", lwd = 1.5, lty = 2)
+abline(h = -cutoff, col = "red", lwd = 1.5)
+abline(h = cutoff, col = "red", lwd = 1.5)
+
+
+plot(fitted(M3), M3.res, pch = 19, xlab="Predicted", ylab = "Standardized Residual") 
+abline(h = 0, col = "grey", lwd = 1.5, lty = 2)
+abline(h = -cutoff, col = "red", lwd = 1.5)
+abline(h = cutoff, col = "red", lwd = 1.5)
+
+out <- which(abs(M3.res) > cutoff)
+out 
+
+formula(M3)
+
+# no higher-order terms needed
+plot(mydata$combined_metric, M3.res, pch = 19, xlab = "combined_metric", ylab = "Standardized Residual") 
+plot(mydata$fuel_type, M3.res, pch = 19, xlab = "fuel_type", ylab = "Standardized Residual")
+plot(mydata$euro_standard, M3.res, pch = 19, xlab = "euro_standard", ylab = "Standardized Residual")
+plot(mydata$nox_emissions, M3.res, pch = 19, xlab = "nox_emissions", ylab = "Standardized Residual")
+plot(mydata$transmission_type, M3.res, pch = 19, xlab = "transmission_type", ylab = "Standardized Residual")
+plot(mydata$engine_capacity, M3.res, pch = 19, xlab = "engine_capacity", ylab = "Standardized Residual")
+
+
+qqnorm(M3.res, pch = 19)
+qqline(M3.res, col = "red")
+shapiro.test(M3.res)
+```
+
+### Discussion:
+
+We check the residual plots to determine whether M3 satisfies the assumptions of the normal linear regression model.
+
+-   Residuals seem to be randomly distributed around 0. Independence can be assumed.
+-   The residuals on the residuals vs. fitted/predicted plot do not follow a homogeneous and random pattern, and residuals spread as the predicted value increases, hence there is heteroscedasticity. It does not satisfy the normal lr assumption (homoscedasticity).
+-   There are apparent outliers as well, which can be seen on both plots.
+-   Linearity can be assumed since residual vs. predictor plots generally showcase random scatters around 0.
+-   The Q-Q plot shows deviations from the normal on the left and right tail, which might be a cause of the aforementioned outliers. Shapiro-Wilk test also rejects normality. It does not satisfy the normal lr assumption (normality).
+
+## Question 5
+
+```{r}
+summary(M3)
+```
+
+```{r}
+
+M4 <- update(M3, . ~ . - engine_capacity  , data = mydata)
+summary(M4)
+
+anova(M4, M3)
+
+summary(M4)$r.squared
+summary(M3)$r.squared
+
+
+```
+
+### Discussion:
+
+Not all are significant, as it can be seen above. Notably, we can omit engine_capacity, since its inclusion is not statistically significant.
+
+## Question 6
+
+```{r}
+# Similar to the exercise session 7
+results <- matrix(0, nrow = 6, ncol = 4)
+
+# R2 
+results[1, ] <- c(summary(M1)$r.squared,
+                  summary(M2)$r.squared,
+                  summary(M3)$r.squared,
+                  summary(M4)$r.squared)
+# RMSE
+n <- nrow(model.matrix(M1))
+results[2, ] <- c(sqrt(deviance(M1)/n),
+                  sqrt(deviance(M2)/n),
+                  sqrt(deviance(M3)/n),
+                  sqrt(deviance(M4)/n))
+
+# adjusted R2
+results[3, ] <- c(summary(M1)$adj.r.squared,
+                  summary(M2)$adj.r.squared,
+                  summary(M3)$adj.r.squared,
+                  summary(M4)$adj.r.squared)
+
+# AIC               
+results[4, ] <- c(extractAIC(M1)[2],
+                  extractAIC(M2)[2],
+                  extractAIC(M3)[2],
+                  extractAIC(M4)[2])
+ 
+
+
+model1 <- caret::train(formula(M1), data = data.frame(mydata), method = "lm",
+                       trControl = trainControl(method = "cv", number = 5))
+
+model2 <- caret::train(formula(M2), data = mydata, method = "lm",
+                       trControl = trainControl(method = "cv", number = 5))
+
+model3 <- caret::train(formula(M3), data = mydata, method = "lm",
+                       trControl = trainControl(method = "cv", number = 5))
+
+model4 <- caret::train(formula(M4), data = mydata, method = "lm",
+                       trControl = trainControl(method = "cv", number = 5))
+
+
+results[5, ] <- c(model1$results$RMSE,
+                  model2$results$RMSE,
+                  model3$results$RMSE,
+                  model4$results$RMSE)
+
+# PRESS
+results[6, ] <- c(sqrt(press(M1)/n),
+                  sqrt(press(M2)/n),
+                  sqrt(press(M3)/n),
+                  sqrt(press(M4)/n))
+
+rownames(results) <- c("R^2", "RMSE", "R_adj^2", "AIC", "RMSE_CV", "RMSE-PRESS")
+colnames(results) <- c("M1", "M2", "M3", "M4")
+
+
+# View(results)
+print(results)
+
+```
+
+### Discussion:
+
+-   Generally, all models are successful with small variations in the error/accuracy metrics given.
+-   Based on R\^2 and RMSE, M1 performs the best.
+-   Based on R_adj\^2, AIC, RMSE_CV and RMSE-PRESS M2 performs the best.
+-   M3 and M4 lag behind M1 and M2. This was expected as it was mentioned previously. When compared to M4, M3 surpasses it in all except RMSE-PRESS.
+
+One thing that affects these values is the fact that we use the entire dataset for training, hence these are training metrics (except for RMSE_CV which does cross-validation). Perhaps with a validation set on the side, M3 or M4 could perform better compared to M1 and M2, which might perform poorly because of multicollinearity. Although M2, for RMSE_CV, outperforms all models, which might indicate that this is not an issue.
+
+Based on the metrics, choosing M2 seems to be logical. Although, with a slight performance trade-off, M3 could be chosen to obtain a model with less multicollinearity.
